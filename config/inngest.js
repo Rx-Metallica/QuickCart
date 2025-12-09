@@ -1,7 +1,7 @@
 import { Inngest } from "inngest";
-import connectDB from "./db";
 import User from "@/models/User";
 import Order from "@/models/Order";
+import connectDB from "@/config/db";
 
 export const inngest = new Inngest({id: "quickcart-next"});
 
@@ -58,29 +58,36 @@ export const syncUserDeletion = inngest.createFunction(
 )
 
 // Ingest Function to create users order in database
-export const createOrder = inngest.createFunction(
-    {
-        id: 'create-user-order',
-        batchEvents:{
-            maxSize: 5,
-            timeout: '5s' // 5 s
-        }
-    },
-    {event: 'order/created'},
-    async({events})=>{
-        const orders = events.map((event)=>{
-            return{
-                userid: event.data.userId,
-                address: event.data.address,
-                items: event.data.items,
-                amount: event.data.amount,
-                data: event.data.data
-            }
-        })
+export const createUserOrder = inngest.createFunction(
+  {
+    id: "create-user-order",
+  },
+  { event: "order/created" },
+  async ({ event }) => {
+    // event.data is exactly what you sent from POST
+    const { userId, address, items, amount, date } = event.data || {};
 
-        await connectDB();
-        await Order.insertMany(orders);
-
-        return {success: true, processed: orders.length};
+    // (Optional) basic guard – but if this passes, Mongoose WILL NOT complain
+    if (!userId || !date) {
+      throw new Error(
+        `Missing userId or date in event.data. Got: ${JSON.stringify(
+          event.data
+        )}`
+      );
     }
-)
+
+    await connectDB();
+
+    const order = await Order.create({
+      userId,   // string, required: true
+      address,  // string, required: true
+      items,    // array, required in your logic
+      amount,   // number, required: true
+      date,     // number, required: true
+    });
+
+    console.log("✅ Order created from Inngest:", order._id);
+
+    return { success: true, orderId: order._id };
+  }
+);
